@@ -38,7 +38,7 @@ const worker = new Worker(
 
       await prisma.email.update({
         where: { id: emailId },
-        data: { status: "RATE_LIMITED" },
+        data: { status: "RATE_LIMITED", nextAttemptAt: nextWindowStart },
       });
 
       await emailQueue.add(
@@ -60,7 +60,7 @@ const worker = new Worker(
 
     await prisma.email.update({
       where: { id: emailId },
-      data: { status: "RATE_LIMITED"},
+      data: { status: "PROCESSING" },
     });
 
     try {
@@ -73,7 +73,7 @@ const worker = new Worker(
 
       await prisma.email.update({
         where: { id: emailId },
-        data: { status: "SENT", sentAt: new Date() },
+        data: { status: "SENT", sentAt: new Date(), nextAttemptAt: null },
       });
 
       console.log(`[worker] ✅ sent ${emailId} — preview: ${previewUrl}`);
@@ -97,3 +97,12 @@ worker.on("completed", (job) => console.log(`[worker] job ${job.id} completed`))
 worker.on("failed", (job, err) => console.error(`[worker] job ${job?.id} failed permanently:`, err.message));
 
 console.log("[worker] email worker started, waiting for jobs...");
+
+async function shutdown(signal: string) {
+  console.log(`[worker] received ${signal}, closing gracefully...`);
+  await worker.close(); 
+  process.exit(0);
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
