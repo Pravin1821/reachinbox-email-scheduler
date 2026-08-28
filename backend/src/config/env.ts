@@ -13,4 +13,6 @@ export const env = {
   PORT: process.env.PORT || "4000",
   DATABASE_URL: required("DATABASE_URL"),
   REDIS_URL: required("REDIS_URL"),
+  ETHEREAL_USER: required("ETHEREAL_USER"),
+  ETHEREAL_PASS: required("ETHEREAL_PASS"),
 };
