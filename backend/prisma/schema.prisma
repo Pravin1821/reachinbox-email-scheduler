@@ -38,6 +38,7 @@ model Email {
 
   status        EmailStatus @default(SCHEDULED)
   scheduledAt   DateTime   
+  nextAttemptAt DateTime?
   sentAt        DateTime?   
 
   bullJobId     String?     @unique
@@ -55,7 +56,7 @@ model RateLimitWindow {
   id          String   @id @default(uuid())
   senderId    String
   sender      Sender   @relation(fields: [senderId], references: [id])
-  hourWindow  String   // e.g. "2026-08-28T14"
+  hourWindow  String   
   count       Int      @default(0)
 
   @@unique([senderId, hourWindow])

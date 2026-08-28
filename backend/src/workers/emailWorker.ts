@@ -1,8 +1,14 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../config/redis";
-import { EMAIL_QUEUE_NAME } from "../queues/emailQueue";
+import { EMAIL_QUEUE_NAME, emailQueue } from "../queues/emailQueue";
 import { prisma } from "../config/prisma";
 import { sendEmail } from "../services/mailer";
+import {
+  checkAndIncrementRateLimit,
+  rollbackRateLimitIncrement,
+  getNextHourWindowStart,
+} from "../services/rateLimiter";
+import { notifyRateLimitHit } from "../services/slack"; 
 
 const worker = new Worker(
   EMAIL_QUEUE_NAME,
@@ -18,9 +24,43 @@ const worker = new Worker(
       console.warn(`[worker] email ${emailId} not found in DB, skipping`);
       return { skipped: true };
     }
+
+    const rateLimitResult = await checkAndIncrementRateLimit(
+      email.senderId,
+      email.sender.maxEmailsPerHour
+    );
+
+    if (!rateLimitResult.allowed) {
+      await rollbackRateLimitIncrement(email.senderId);
+
+      const nextWindowStart = getNextHourWindowStart(new Date());
+      const newDelayMs = nextWindowStart.getTime() - Date.now();
+
+      await prisma.email.update({
+        where: { id: emailId },
+        data: { status: "RATE_LIMITED" },
+      });
+
+      await emailQueue.add(
+        "send-email",
+        { emailId },
+        { jobId: emailId, delay: newDelayMs }
+      );
+
+      console.warn(
+        `[worker] rate limit hit for sender ${email.senderId} ` +
+        `(${rateLimitResult.currentCount}/${rateLimitResult.limit}) — ` +
+        `requeued ${emailId} for ${nextWindowStart.toISOString()}`
+      );
+
+      await notifyRateLimitHit(email.senderId, rateLimitResult.limit);
+
+      return { rateLimited: true, requeuedFor: nextWindowStart.toISOString() };
+    }
+
     await prisma.email.update({
       where: { id: emailId },
-      data: { status: "PROCESSING" },
+      data: { status: "RATE_LIMITED"},
     });
 
     try {
@@ -44,7 +84,7 @@ const worker = new Worker(
         data: { status: "FAILED", failureReason: err.message },
       });
       console.error(`[worker] ❌ send failed for ${emailId}:`, err.message);
-      throw err; 
+      throw err;
     }
   },
   {
@@ -53,12 +93,7 @@ const worker = new Worker(
   }
 );
 
-worker.on("completed", (job) => {
-  console.log(`[worker] job ${job.id} completed`);
-});
-
-worker.on("failed", (job, err) => {
-  console.error(`[worker] job ${job?.id} failed permanently:`, err.message);
-});
+worker.on("completed", (job) => console.log(`[worker] job ${job.id} completed`));
+worker.on("failed", (job, err) => console.error(`[worker] job ${job?.id} failed permanently:`, err.message));
 
 console.log("[worker] email worker started, waiting for jobs...");
