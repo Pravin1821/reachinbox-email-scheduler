@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  # Redis is NOT a cache here — it's the actual storage engine BullMQ uses
+  # to hold delayed jobs (as sorted sets keyed by "run at" timestamp) and
+  # queue state. When a job's delay expires, Redis's internal mechanism
+  # wakes the worker — there is no polling loop, no setInterval, no cron.
+  # That's what satisfies the "no cron jobs" hard requirement.
+  redis:
+    image: redis:7-alpine
+    container_name: reachinbox-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes   # AOF persistence: survives container restarts
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Postgres is the system of record — the source of truth for "what
+  # emails exist and what state are they in". If Redis got wiped entirely,
+  # we should be able to rebuild the queue FROM Postgres. The reverse is
+  # never true. This asymmetry is the backbone of our restart-safety design
+  # (we'll build the reconciler that enforces this in Phase 7).
+  postgres:
+    image: postgres:16-alpine
+    container_name: reachinbox-postgres
+    environment:
+      POSTGRES_USER: reachinbox
+      POSTGRES_PASSWORD: reachinbox
+      POSTGRES_DB: reachinbox
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reachinbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Elasticsearch backs the "sent/scheduled emails searchable" requirement.
+  # Single-node, security disabled — this is a dev/demo setup, not prod-hardened.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    container_name: reachinbox-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:
+  postgres_data:
+  es_data:
