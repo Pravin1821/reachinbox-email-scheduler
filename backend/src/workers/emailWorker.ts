@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../config/redis";
-import { EMAIL_QUEUE_NAME, emailQueue } from "../queues/emailQueue";
+import { EMAIL_QUEUE_NAME, scheduleEmailJob } from "../queues/emailQueue";
 import { prisma } from "../config/prisma";
 import { sendEmail } from "../services/mailer";
 import {
@@ -15,6 +15,12 @@ const worker = new Worker(
   EMAIL_QUEUE_NAME,
   async (job: Job) => {
     const { emailId } = job.data;
+
+    if (!emailId) {
+      throw new Error(
+        `Job ${job.id} has malformed data — no emailId found. Raw job.data: ${JSON.stringify(job.data)}`
+      );
+    }
 
     const email = await prisma.email.findUnique({
       where: { id: emailId },
@@ -35,18 +41,13 @@ const worker = new Worker(
       await rollbackRateLimitIncrement(email.senderId);
 
       const nextWindowStart = getNextHourWindowStart(new Date());
-      const newDelayMs = nextWindowStart.getTime() - Date.now();
 
       await prisma.email.update({
         where: { id: emailId },
         data: { status: "RATE_LIMITED", nextAttemptAt: nextWindowStart },
       });
 
-      await emailQueue.add(
-        "send-email",
-        { emailId },
-        { jobId: emailId, delay: newDelayMs }
-      );
+      await scheduleEmailJob(emailId, nextWindowStart);
 
       console.warn(
         `[worker] rate limit hit for sender ${email.senderId} ` +

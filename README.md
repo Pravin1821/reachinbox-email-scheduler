@@ -238,6 +238,29 @@ All counters are per-sender, per-hour. The key is auto-expired after 2 hours.
 
 ---
 
+## Maintenance & Utility Scripts
+
+Located in `backend/src/scripts/`:
+
+- `fixStuckEmails.ts` — Finds any stuck `SCHEDULED` or `RATE_LIMITED` emails with expired schedules and dead BullMQ jobs, cleans old Redis job artifacts, and immediately reschedules them for processing:
+  ```bash
+  cd backend
+  npx ts-node src/scripts/fixStuckEmails.ts
+  ```
+- `checkDb.ts` — Prints current senders, scheduled emails, and sent emails from PostgreSQL:
+  ```bash
+  cd backend
+  npx ts-node src/scripts/checkDb.ts
+  ```
+- `seedTestData.ts` — Populates sample test data for local verification:
+  ```bash
+  cd backend
+  npx ts-node src/scripts/seedTestData.ts
+  ```
+
+
+---
+
 ## Features Checklist
 
 ### Backend
