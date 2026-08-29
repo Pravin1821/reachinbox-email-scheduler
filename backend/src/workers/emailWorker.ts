@@ -59,12 +59,6 @@ const worker = new Worker(
       return { rateLimited: true, requeuedFor: nextWindowStart.toISOString() };
     }
 
-   await prisma.email.update({
-  where: { id: emailId },
-  data: { status: "SENT", sentAt: new Date() },
-});
-await indexEmail({ ...email, status: "SENT", sentAt: new Date() });
-
     try {
       const { messageId, previewUrl } = await sendEmail({
         to: email.to,
@@ -75,10 +69,20 @@ await indexEmail({ ...email, status: "SENT", sentAt: new Date() });
 
       await prisma.email.update({
         where: { id: emailId },
-        data: { status: "SENT", sentAt: new Date(), nextAttemptAt: null },
+        data: {
+          status: "SENT",
+          sentAt: new Date(),
+          nextAttemptAt: null,
+          previewUrl: previewUrl ? String(previewUrl) : null,
+        },
       });
 
-      await indexEmail({ ...email, status: "SENT", sentAt: new Date() });
+      await indexEmail({
+        ...email,
+        status: "SENT",
+        sentAt: new Date(),
+        previewUrl: previewUrl ? String(previewUrl) : null,
+      });
       return { messageId, previewUrl };
     } catch (err: any) {
       await prisma.email.update({

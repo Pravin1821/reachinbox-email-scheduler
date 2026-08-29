@@ -34,6 +34,7 @@ export async function indexEmail(email: {
   senderId: string;
   scheduledAt: Date;
   sentAt: Date | null;
+  previewUrl?: string | null;
 }) {
   try {
     await client.index({
@@ -47,6 +48,7 @@ export async function indexEmail(email: {
         senderId: email.senderId,
         scheduledAt: email.scheduledAt,
         sentAt: email.sentAt,
+        previewUrl: email.previewUrl ?? null,
       },
     });
   } catch (err: any) {

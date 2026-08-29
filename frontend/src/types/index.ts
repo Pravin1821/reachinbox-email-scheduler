@@ -30,6 +30,7 @@ export interface Email {
   sentAt: string | null;
   bullJobId: string | null;
   failureReason: string | null;
+  previewUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,6 +46,7 @@ export interface EmailSearchResult {
   senderId: string;
   scheduledAt: string | null;
   sentAt: string | null;
+  previewUrl?: string | null;
 }
 
 // ─── API Request Shapes ────────────────────────────────────────────────────
@@ -54,6 +56,12 @@ export interface ScheduleEmailPayload {
   body: string;
   senderId: string;
   scheduledAt: string; // ISO 8601 date string
+}
+
+export interface CreateSenderPayload {
+  name: string;
+  email: string;
+  maxEmailsPerHour?: number;
 }
 
 // ─── API Response Shapes ───────────────────────────────────────────────────
@@ -73,21 +81,31 @@ export interface GetSendersResponse {
   senders: Sender[];
 }
 
+export interface CreateSenderResponse {
+  sender: Sender;
+}
+
 // ─── Auth ──────────────────────────────────────────────────────────────────
-export interface GoogleUser {
-  sub: string;
+// Shape returned by GET /api/auth/me → { user: SessionUser }
+// This matches the Passport serialized user in backend/src/config/passport.ts
+export interface SessionUser {
+  id: string;    // Google profile ID
   name: string;
-  given_name: string;
-  family_name: string;
-  picture: string;
   email: string;
-  email_verified: boolean;
+  avatar: string; // Google profile photo URL
 }
 
 export interface AuthState {
-  user: GoogleUser | null;
-  credential: string | null;
+  user: SessionUser | null;
   isAuthenticated: boolean;
+  isLoading: boolean; // true while /api/auth/me is in-flight
+}
+
+// ─── Slack ─────────────────────────────────────────────────────────────────
+export interface SlackStatus {
+  connected: boolean;
+  teamId?: string;
+  channelId?: string;
 }
 
 // ─── API Error ─────────────────────────────────────────────────────────────

@@ -1,135 +1,128 @@
-import { useState } from 'react';
-import Header from './Header';
-import Tabs from '../../components/Tabs';
-import ScheduledEmailsTab from '../scheduled-emails/ScheduledEmailsTab';
-import SentEmailsTab from '../sent-emails/SentEmailsTab';
-import ComposeModal from '../compose/ComposeModal';
-
-type TabId = 'scheduled' | 'sent';
-
-const TABS = [
-  {
-    id: 'scheduled' as TabId,
-    label: 'Scheduled Emails',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'sent' as TabId,
-    label: 'Sent Emails',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-      </svg>
-    ),
-  },
-];
+import { useState, useEffect, useCallback } from 'react';
+import Sidebar from './Sidebar';
+import EmailListView from './EmailListView';
+import EmailDetailView from './EmailDetailView';
+import ComposePage from '../compose/ComposePage';
+import { getScheduledEmails, getSentEmails, searchEmails } from '../../api/emails';
+import type { Email } from '../../types';
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('scheduled');
-  const [composeOpen, setComposeOpen] = useState(false);
-  // Incrementing this triggers a refresh in the ScheduledEmailsTab
-  const [scheduledRefreshToken, setScheduledRefreshToken] = useState(0);
+  const [activeTab, setActiveTab] = useState<'scheduled' | 'sent'>('scheduled');
+  const [emails, setEmails] = useState<Email[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  function handleScheduled() {
-    setScheduledRefreshToken((n) => n + 1);
-    setActiveTab('scheduled');
-  }
+  // Counts for Sidebar
+  const [scheduledCount, setScheduledCount] = useState(0);
+  const [sentCount, setSentCount] = useState(0);
+
+  // Selected Email for Detail View
+  const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+
+  // Compose Overlay State
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+
+  const fetchEmailData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch both scheduled & sent emails in parallel to keep sidebar counts updated
+      const [scheduledRes, sentRes] = await Promise.all([
+        getScheduledEmails(),
+        getSentEmails(),
+      ]);
+
+      setScheduledCount(scheduledRes.emails.length);
+      setSentCount(sentRes.emails.length);
+
+      if (activeTab === 'scheduled') {
+        setEmails(scheduledRes.emails);
+      } else {
+        setEmails(sentRes.emails);
+      }
+    } catch (err) {
+      console.error('Failed to fetch emails:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    fetchEmailData();
+  }, [fetchEmailData]);
+
+  // Handle Search
+  const handleSearch = async (query: string) => {
+    if (!query.trim()) {
+      fetchEmailData();
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await searchEmails(query);
+      // Map search results to Email shapes
+      const mapped: Email[] = res.results.map((r) => ({
+        id: r.id,
+        to: r.to,
+        subject: r.subject,
+        body: r.body,
+        status: r.status as Email['status'],
+        scheduledAt: r.scheduledAt || new Date().toISOString(),
+        senderId: r.senderId,
+        sender: { id: r.senderId, name: 'Sender', email: 'sender@example.com', maxEmailsPerHour: 200, createdAt: '' },
+        nextAttemptAt: null,
+        sentAt: r.sentAt,
+        previewUrl: r.previewUrl,
+        bullJobId: null,
+        failureReason: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+      setEmails(mapped);
+    } catch {
+      // fallback
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col">
-      <Header onCompose={() => setComposeOpen(true)} />
+    <div className="flex h-screen w-screen overflow-hidden bg-white font-sans">
+      {/* 1. Fixed Sidebar */}
+      <Sidebar
+        activeTab={activeTab}
+        onSelectTab={(tab) => {
+          setActiveTab(tab);
+          setSelectedEmail(null); // Reset detail view when switching tabs
+        }}
+        scheduledCount={scheduledCount}
+        sentCount={sentCount}
+        onCompose={() => setIsComposeOpen(true)}
+      />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
-        {/* Page title */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white mb-1">Email Dashboard</h1>
-          <p className="text-white/40 text-sm">
-            Manage your scheduled and sent email campaigns.
-          </p>
-        </div>
-
-        {/* Stats bar */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <StatCard
-            label="Scheduled"
-            icon="🗓️"
-            color="text-blue-400"
-            bg="bg-blue-500/10"
-            border="border-blue-500/20"
+      {/* 2. Main Content Area */}
+      <main className="flex-1 h-full bg-white overflow-hidden relative min-w-0">
+        {selectedEmail ? (
+          <EmailDetailView
+            email={selectedEmail}
+            onBack={() => setSelectedEmail(null)}
           />
-          <StatCard
-            label="Sent"
-            icon="✅"
-            color="text-emerald-400"
-            bg="bg-emerald-500/10"
-            border="border-emerald-500/20"
+        ) : (
+          <EmailListView
+            emails={emails}
+            loading={loading}
+            activeTab={activeTab}
+            onSelectEmail={(email) => setSelectedEmail(email)}
+            onRefresh={fetchEmailData}
+            onSearch={handleSearch}
           />
-          <StatCard
-            label="Failed"
-            icon="⚠️"
-            color="text-red-400"
-            bg="bg-red-500/10"
-            border="border-red-500/20"
-          />
-        </div>
-
-        {/* Tabs + content */}
-        <div className="glass-card p-6 border border-white/5">
-          <div className="flex items-center justify-between mb-6">
-            <Tabs
-              tabs={TABS}
-              activeTab={activeTab}
-              onChange={(id) => setActiveTab(id as TabId)}
-            />
-          </div>
-
-          <div className="animate-fade-in" key={activeTab}>
-            {activeTab === 'scheduled' ? (
-              <ScheduledEmailsTab refreshToken={scheduledRefreshToken} />
-            ) : (
-              <SentEmailsTab />
-            )}
-          </div>
-        </div>
+        )}
       </main>
 
-      {/* Compose modal */}
-      <ComposeModal
-        isOpen={composeOpen}
-        onClose={() => setComposeOpen(false)}
-        onScheduled={handleScheduled}
+      {/* 3. Compose Overlay */}
+      <ComposePage
+        isOpen={isComposeOpen}
+        onClose={() => setIsComposeOpen(false)}
+        onScheduled={fetchEmailData}
       />
-    </div>
-  );
-}
-
-// ── Placeholder stat card ─────────────────────────────────────────────────
-function StatCard({
-  label,
-  icon,
-  color,
-  bg,
-  border,
-}: {
-  label: string;
-  icon: string;
-  color: string;
-  bg: string;
-  border: string;
-}) {
-  return (
-    <div className={`glass-card p-4 border ${border} flex items-center gap-3`}>
-      <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center text-lg`}>
-        {icon}
-      </div>
-      <div>
-        <p className={`text-sm font-semibold ${color}`}>{label}</p>
-        <p className="text-xs text-white/30">Emails</p>
-      </div>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import Button from '../../components/Button';
 import Input from '../../components/Input';
 import Spinner from '../../components/Spinner';
 import { scheduleEmail } from '../../api/emails';
-import { getSenders } from '../../api/senders';
+import { getSenders, createSender } from '../../api/senders';
 import type { Sender } from '../../types';
 
 // ─── CSV parsing ─────────────────────────────────────────────────────────────
@@ -55,12 +55,17 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
   const [csvFileName, setCsvFileName] = useState('');
 
   // Sender state
-  // TODO: backend endpoint GET /api/senders not found — once implemented,
-  // getSenders() will return the list and we populate the dropdown.
   const [senders, setSenders] = useState<Sender[]>([]);
   const [selectedSenderId, setSelectedSenderId] = useState('');
   const [senderError, setSenderError] = useState<string | null>(null);
   const [senderLoading, setSenderLoading] = useState(false);
+
+  // Inline "create sender" form
+  const [showCreateSender, setShowCreateSender] = useState(false);
+  const [newSenderName, setNewSenderName] = useState('');
+  const [newSenderEmail, setNewSenderEmail] = useState('');
+  const [newSenderLimit, setNewSenderLimit] = useState(200);
+  const [creatingsSender, setCreatingSender] = useState(false);
 
   // Submit state
   const [submitting, setSubmitting] = useState(false);
@@ -78,23 +83,48 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
     try {
       const data = await getSenders();
       setSenders(data.senders);
-      if (data.senders.length > 0) setSelectedSenderId(data.senders[0].id);
-    } catch (err: unknown) {
-      // TODO: GET /api/senders not found in backend — see NOTES.md
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      if (msg.includes('404') || msg.includes('Not Found') || msg.includes('Cannot GET')) {
-        setSenderError(
-          'GET /api/senders is not yet implemented in the backend. ' +
-          'Please ask the backend developer to add this endpoint, or ' +
-          'manually enter a Sender UUID below.',
-        );
+      if (data.senders.length > 0) {
+        setSelectedSenderId(data.senders[0].id);
+        setShowCreateSender(false);
       } else {
-        setSenderError(msg);
+        setSelectedSenderId('');
+        setShowCreateSender(false); // show the "no senders" prompt instead
       }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setSenderError(msg);
     } finally {
       setSenderLoading(false);
     }
   }, []);
+
+  // ── Create a new sender inline ─────────────────────────────────────────────
+  async function handleCreateSender() {
+    if (!newSenderName.trim() || !newSenderEmail.trim()) {
+      toast.error('Name and email are required to create a sender.');
+      return;
+    }
+    setCreatingSender(true);
+    try {
+      const { sender } = await createSender({
+        name: newSenderName.trim(),
+        email: newSenderEmail.trim(),
+        maxEmailsPerHour: newSenderLimit,
+      });
+      setSenders((prev) => [...prev, sender]);
+      setSelectedSenderId(sender.id);
+      setShowCreateSender(false);
+      setNewSenderName('');
+      setNewSenderEmail('');
+      setNewSenderLimit(200);
+      toast.success(`Sender "${sender.name}" created!`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to create sender.';
+      toast.error(msg);
+    } finally {
+      setCreatingSender(false);
+    }
+  }
 
   // Reset + load senders on open
   const handleOpen = useCallback(() => {
@@ -109,6 +139,10 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
     setProgress(null);
     setSenders([]);
     setSelectedSenderId('');
+    setShowCreateSender(false);
+    setNewSenderName('');
+    setNewSenderEmail('');
+    setNewSenderLimit(200);
     loadSenders();
   }, [loadSenders]);
 
@@ -148,7 +182,7 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
     if (!body.trim()) errs.body = 'Body is required.';
     if (leads.valid.length === 0) errs.leads = 'At least one valid email address is required.';
     if (!startTime) errs.startTime = 'Start time is required.';
-    if (!selectedSenderId.trim()) errs.senderId = 'Sender ID is required.';
+    if (!selectedSenderId.trim()) errs.senderId = 'Please select or create a sender.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -195,7 +229,6 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
       onScheduled();
     } else {
       toast.error('All scheduling attempts failed. Check console for details.');
-      // Keep modal open so user doesn't lose their input
     }
   }
 
@@ -274,7 +307,7 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
             id="leads-textarea"
             value={rawLeads}
             onChange={handleRawLeadsChange}
-            placeholder="or paste emails here, one per line or comma-separated&#10;e.g. alice@example.com, bob@example.com"
+            placeholder={"or paste emails here, one per line or comma-separated\ne.g. alice@example.com, bob@example.com"}
             rows={4}
             className={`input-base resize-none ${errors.leads ? 'border-red-500/60 focus:border-red-500 focus:ring-red-500' : ''}`}
           />
@@ -329,10 +362,10 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
           </div>
         </div>
 
-        {/* Sender */}
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="compose-sender-id" className="text-sm font-medium text-white/70">
-            Sender ID (UUID) *
+        {/* Sender selection */}
+        <div className="flex flex-col gap-2">
+          <label htmlFor="compose-sender-select" className="text-sm font-medium text-white/70">
+            From Sender *
           </label>
 
           {senderLoading && (
@@ -341,19 +374,14 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
             </div>
           )}
 
-          {/* Missing endpoint warning */}
           {senderError && (
-            <div className="rounded-lg bg-orange-500/10 border border-orange-500/20 p-3 text-xs text-orange-300">
-              <p className="font-semibold mb-1">⚠ Backend endpoint missing</p>
-              <p className="text-orange-300/70">{senderError}</p>
-              <p className="mt-2 text-orange-300/50">
-                {/* TODO: backend endpoint GET /api/senders not found, confirm with backend dev */}
-                Please enter the Sender UUID directly from your database.
-              </p>
+            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">
+              <p className="font-semibold mb-1">⚠ Failed to load senders</p>
+              <p className="text-red-300/70">{senderError}</p>
             </div>
           )}
 
-          {/* Sender dropdown if loaded */}
+          {/* Sender dropdown */}
           {!senderLoading && senders.length > 0 && (
             <select
               id="compose-sender-select"
@@ -363,24 +391,113 @@ export default function ComposeModal({ isOpen, onClose, onScheduled }: ComposeMo
             >
               {senders.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} — {s.email}
+                  {s.name} — {s.email} (limit: {s.maxEmailsPerHour}/hr)
                 </option>
               ))}
             </select>
           )}
 
-          {/* Manual UUID fallback (always shown so user can override or enter manually) */}
-          <input
-            id="compose-sender-id"
-            type="text"
-            value={selectedSenderId}
-            onChange={(e) => setSelectedSenderId(e.target.value)}
-            placeholder="e.g. 123e4567-e89b-12d3-a456-426614174000"
-            className={`input-base font-mono text-xs ${errors.senderId ? 'border-red-500/60 focus:border-red-500' : ''}`}
-          />
+          {/* No senders prompt */}
+          {!senderLoading && !senderError && senders.length === 0 && !showCreateSender && (
+            <div className="rounded-lg bg-brand-500/10 border border-brand-500/20 p-4 text-sm">
+              <p className="text-white/70 mb-3">
+                No senders found. Create one to get started.
+              </p>
+              <Button
+                id="create-sender-prompt-btn"
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowCreateSender(true)}
+                leftIcon={
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                }
+              >
+                Create Sender
+              </Button>
+            </div>
+          )}
+
+          {/* Inline create sender form */}
+          {showCreateSender && (
+            <div className="rounded-lg bg-surface-100 border border-white/10 p-4 space-y-3">
+              <p className="text-xs font-semibold text-white/60 uppercase tracking-wide">New Sender</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-white/50">Display Name *</label>
+                  <input
+                    id="new-sender-name"
+                    type="text"
+                    value={newSenderName}
+                    onChange={(e) => setNewSenderName(e.target.value)}
+                    placeholder="Acme Marketing"
+                    className="input-base text-sm"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-white/50">From Email *</label>
+                  <input
+                    id="new-sender-email"
+                    type="email"
+                    value={newSenderEmail}
+                    onChange={(e) => setNewSenderEmail(e.target.value)}
+                    placeholder="hello@acme.com"
+                    className="input-base text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-white/50">Max emails / hour</label>
+                <input
+                  id="new-sender-limit"
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={newSenderLimit}
+                  onChange={(e) => setNewSenderLimit(Math.max(1, parseInt(e.target.value) || 200))}
+                  className="input-base w-32 text-sm"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  id="create-sender-submit-btn"
+                  variant="primary"
+                  size="sm"
+                  onClick={handleCreateSender}
+                  loading={creatingsSender}
+                  disabled={creatingsSender}
+                >
+                  Create Sender
+                </Button>
+                <Button
+                  id="create-sender-cancel-btn"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowCreateSender(false)}
+                  disabled={creatingsSender}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* "Add another sender" link when senders already exist */}
+          {!senderLoading && senders.length > 0 && !showCreateSender && (
+            <button
+              type="button"
+              id="add-another-sender-btn"
+              onClick={() => setShowCreateSender(true)}
+              className="text-xs text-brand-400/70 hover:text-brand-400 self-start transition-colors"
+            >
+              + Add another sender
+            </button>
+          )}
+
           {errors.senderId && <p className="text-xs text-red-400">{errors.senderId}</p>}
           <p className="text-xs text-white/30">
-            Hourly send limit is configured per sender in the backend (default: 200/hr).
+            Hourly send limit is configured per sender (enforced by Redis atomic rate limiter).
           </p>
         </div>
       </div>

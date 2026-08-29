@@ -50,6 +50,22 @@ const columns: Column<Email>[] = [
     width: '120px',
   },
   {
+    key: 'previewUrl' as keyof Email,
+    header: 'Preview',
+    render: (row) =>
+      row.previewUrl ? (
+        <a
+          href={row.previewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-emerald-400 hover:underline inline-flex items-center gap-1"
+        >
+          View sent email ↗
+        </a>
+      ) : null,
+    width: '140px',
+  },
+  {
     key: 'failureReason',
     header: 'Note',
     render: (row) =>

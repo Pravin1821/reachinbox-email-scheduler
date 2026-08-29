@@ -1,18 +1,22 @@
 import apiClient from './client';
-import type { GetSendersResponse } from '../types';
+import type { GetSendersResponse, CreateSenderPayload, CreateSenderResponse } from '../types';
 
 /**
- * TODO: backend endpoint GET /api/senders not found — confirm with backend dev.
- *
- * The backend has a `Sender` Prisma model (id, name, email, maxEmailsPerHour)
- * and the POST /api/emails/schedule endpoint requires a valid `senderId` UUID,
- * but there is currently NO route that lists available senders.
- *
- * This function will throw an error that the UI must handle gracefully.
- * Once the backend adds GET /api/senders, this will work without UI changes.
+ * GET /api/senders
+ * Returns all Sender rows from the database.
  */
 export async function getSenders(): Promise<GetSendersResponse> {
-  // TODO: backend endpoint GET /api/senders not found, confirm with backend dev
   const res = await apiClient.get<GetSendersResponse>('/api/senders');
+  return res.data;
+}
+
+/**
+ * POST /api/senders
+ * Creates a new Sender. Used to seed test data from the UI when no senders exist.
+ */
+export async function createSender(
+  payload: CreateSenderPayload,
+): Promise<CreateSenderResponse> {
+  const res = await apiClient.post<CreateSenderResponse>('/api/senders', payload);
   return res.data;
 }

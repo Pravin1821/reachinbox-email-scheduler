@@ -1,17 +1,12 @@
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/Avatar';
 import Button from '../../components/Button';
+import { getSlackStatus, disconnectSlack } from '../../api/slack';
 
-// ─── Slack connect status ────────────────────────────────────────────────────
-// TODO: backend endpoint for Slack OAuth not found — confirm with backend dev.
-// The backend has a SlackConnection Prisma model but NO /auth/slack route,
-// no Slack OAuth callback endpoint, and no Slack client credentials in the
-// env config. The "Connect Slack" button is rendered as a disabled placeholder
-// until the backend implements the OAuth flow. See NOTES.md for details.
-
-const SLACK_CONNECTED = false; // TODO: replace with real API check once endpoint exists
+const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 
 export default function Header({
   onCompose,
@@ -21,10 +16,50 @@ export default function Header({
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  function handleLogout() {
-    logout();
+  // ─── Slack connection state ──────────────────────────────────────────────
+  const [slackConnected, setSlackConnected] = useState(false);
+  const [slackLoading, setSlackLoading] = useState(true);
+
+  const loadSlackStatus = useCallback(async () => {
+    setSlackLoading(true);
+    try {
+      const status = await getSlackStatus();
+      setSlackConnected(status.connected);
+    } catch {
+      // Not connected or auth error — treat as disconnected
+      setSlackConnected(false);
+    } finally {
+      setSlackLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSlackStatus();
+  }, [loadSlackStatus]);
+
+  // ─── Handlers ───────────────────────────────────────────────────────────
+  async function handleLogout() {
+    await logout();
     toast.success('Signed out successfully.');
     navigate('/login', { replace: true });
+  }
+
+  function handleConnectSlack() {
+    // Full-page redirect to backend Slack OAuth flow.
+    // The backend /api/slack/connect redirects to Slack's OAuth page.
+    // After approval, Slack redirects to /api/slack/callback which stores
+    // the connection and redirects back to /dashboard?slack=connected.
+    window.location.href = `${API_BASE}/api/slack/connect`;
+  }
+
+  async function handleDisconnectSlack() {
+    try {
+      await disconnectSlack();
+      setSlackConnected(false);
+      toast.success('Slack disconnected.');
+    } catch {
+      toast.error('Failed to disconnect Slack.');
+    }
   }
 
   return (
@@ -57,27 +92,37 @@ export default function Header({
             Compose
           </Button>
 
-          {/* Slack connect */}
-          <div title="Slack OAuth not yet implemented in backend. See NOTES.md.">
-            {SLACK_CONNECTED ? (
+          {/* Slack connect / status */}
+          {slackLoading ? (
+            <div className="w-[110px] h-8 rounded-lg bg-white/5 animate-pulse" />
+          ) : slackConnected ? (
+            <div className="flex items-center gap-1.5">
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium">
-                {/* Slack logo mark */}
                 <SlackIcon className="w-3.5 h-3.5" />
                 Slack connected
               </span>
-            ) : (
-              <Button
-                id="connect-slack-btn"
-                variant="secondary"
-                size="sm"
-                disabled
-                title="Slack OAuth endpoint not yet available in backend"
-                leftIcon={<SlackIcon className="w-3.5 h-3.5 opacity-50" />}
+              <button
+                id="disconnect-slack-btn"
+                onClick={handleDisconnectSlack}
+                title="Disconnect Slack"
+                className="p-1.5 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all"
               >
-                Connect Slack
-              </Button>
-            )}
-          </div>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <Button
+              id="connect-slack-btn"
+              variant="secondary"
+              size="sm"
+              onClick={handleConnectSlack}
+              leftIcon={<SlackIcon className="w-3.5 h-3.5" />}
+            >
+              Connect Slack
+            </Button>
+          )}
 
           {/* Divider */}
           <div className="w-px h-6 bg-white/10" />
@@ -85,7 +130,7 @@ export default function Header({
           {/* User info */}
           <div className="flex items-center gap-2.5">
             <Avatar
-              src={user?.picture}
+              src={user?.avatar}
               name={user?.name}
               size="sm"
             />

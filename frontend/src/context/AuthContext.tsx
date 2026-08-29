@@ -6,69 +6,69 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
-import type { GoogleUser, AuthState } from '../types';
+import type { SessionUser, AuthState } from '../types';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 
 interface AuthContextValue extends AuthState {
-  login: (credential: string, user: GoogleUser) => void;
-  logout: () => void;
+  /** Initiates Google OAuth by doing a full-page redirect to the backend. */
+  initiateLogin: () => void;
+  /** Calls POST /api/auth/logout (server destroys session), then clears local state. */
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const STORAGE_CREDENTIAL_KEY = 'ri_credential';
-const STORAGE_USER_KEY = 'ri_user';
-
-function parseStoredUser(): GoogleUser | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_USER_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as GoogleUser;
-  } catch {
-    return null;
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [credential, setCredential] = useState<string | null>(
-    () => localStorage.getItem(STORAGE_CREDENTIAL_KEY),
-  );
-  const [user, setUser] = useState<GoogleUser | null>(parseStoredUser);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const isAuthenticated = Boolean(credential && user);
+  const isAuthenticated = Boolean(user);
 
-  const login = useCallback((cred: string, googleUser: GoogleUser) => {
-    localStorage.setItem(STORAGE_CREDENTIAL_KEY, cred);
-    localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(googleUser));
-    setCredential(cred);
-    setUser(googleUser);
-  }, []);
-
-  const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_CREDENTIAL_KEY);
-    localStorage.removeItem(STORAGE_USER_KEY);
-    setCredential(null);
-    setUser(null);
-  }, []);
-
-  // Validate that stored token has not expired.
-  // Google JWT exp is in the payload — quick check without a library.
+  // On mount: check whether there is an active server session.
+  // The backend sets an HTTP-only session cookie after Google OAuth completes.
+  // We need credentials: "include" so the browser sends the cookie cross-port
+  // (5173 → 4000).
   useEffect(() => {
-    if (!credential) return;
+    let cancelled = false;
+    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error('Not authenticated');
+        return res.json() as Promise<{ user: SessionUser }>;
+      })
+      .then(({ user: sessionUser }) => {
+        if (!cancelled) setUser(sessionUser);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  /** Starts Google OAuth: full-page redirect so the browser carries the cookie. */
+  const initiateLogin = useCallback(() => {
+    window.location.href = `${API_BASE}/api/auth/google`;
+  }, []);
+
+  /** Destroys the server session, then clears local user state. */
+  const logout = useCallback(async () => {
     try {
-      const payload = JSON.parse(atob(credential.split('.')[1]));
-      const expMs = payload.exp * 1000;
-      if (Date.now() > expMs) {
-        // Token expired — log out silently
-        logout();
-      }
+      await fetch(`${API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
     } catch {
-      // Malformed token — log out
-      logout();
+      // Ignore network errors on logout
+    } finally {
+      setUser(null);
     }
-  }, [credential, logout]);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, credential, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, initiateLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

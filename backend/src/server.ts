@@ -11,10 +11,12 @@ import { env } from "./config/env";
 import passport from "./config/passport";
 import emailRoutes from "./routes/emailRoutes";
 import authRoutes from "./routes/authRoutes";
+import senderRoutes from "./routes/senderRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 import { reconcileOnBoot } from "./services/reconciler";
 import { ensureEmailIndex } from "./services/search";
 import { emailQueue } from "./queues/emailQueue";
+import slackRoutes from "./routes/slackRoutes";
 
 const app = express();
 
@@ -34,6 +36,7 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+
 const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath("/admin/queues");
 createBullBoard({ queues: [new BullMQAdapter(emailQueue)], serverAdapter });
@@ -41,6 +44,8 @@ app.use("/admin/queues", serverAdapter.getRouter());
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRoutes);
+app.use("/api/senders", senderRoutes);
+app.use("/api/slack", slackRoutes);
 app.use("/api/emails", emailRoutes);
 
 app.use(errorHandler);
