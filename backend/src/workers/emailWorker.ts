@@ -9,6 +9,7 @@ import {
   getNextHourWindowStart,
 } from "../services/rateLimiter";
 import { notifyRateLimitHit } from "../services/slack"; 
+import { indexEmail } from "../services/search";
 
 const worker = new Worker(
   EMAIL_QUEUE_NAME,
@@ -58,10 +59,11 @@ const worker = new Worker(
       return { rateLimited: true, requeuedFor: nextWindowStart.toISOString() };
     }
 
-    await prisma.email.update({
-      where: { id: emailId },
-      data: { status: "PROCESSING" },
-    });
+   await prisma.email.update({
+  where: { id: emailId },
+  data: { status: "SENT", sentAt: new Date() },
+});
+await indexEmail({ ...email, status: "SENT", sentAt: new Date() });
 
     try {
       const { messageId, previewUrl } = await sendEmail({
@@ -76,14 +78,14 @@ const worker = new Worker(
         data: { status: "SENT", sentAt: new Date(), nextAttemptAt: null },
       });
 
-      console.log(`[worker] ✅ sent ${emailId} — preview: ${previewUrl}`);
+      await indexEmail({ ...email, status: "SENT", sentAt: new Date() });
       return { messageId, previewUrl };
     } catch (err: any) {
       await prisma.email.update({
         where: { id: emailId },
         data: { status: "FAILED", failureReason: err.message },
       });
-      console.error(`[worker] ❌ send failed for ${emailId}:`, err.message);
+      await indexEmail({ ...email, status: "FAILED", sentAt: null });
       throw err;
     }
   },

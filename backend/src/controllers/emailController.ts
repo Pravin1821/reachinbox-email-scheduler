@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import { prisma } from "../config/prisma";
 import { scheduleEmailJob } from "../queues/emailQueue";
 import { z } from "zod";
+import { indexEmail, ensureEmailIndex } from "../services/search";
+import { searchEmails } from "../services/search";
 
 const scheduleEmailSchema = z.object({
   to: z.string().email(),
@@ -27,7 +29,7 @@ export async function scheduleEmail(req: Request, res: Response) {
   const email = await prisma.email.create({
     data: { to, subject, body, senderId, scheduledAt, status: "SCHEDULED" },
   });
-
+  await indexEmail({ ...email, sentAt: null });
   try {
     const job = await scheduleEmailJob(email.id, scheduledAt);
     await prisma.email.update({
@@ -57,4 +59,11 @@ export async function getSentEmails(req: Request, res: Response) {
     orderBy: { sentAt: "desc" },
   });
   return res.json({ emails });
+}
+
+export async function searchEmailsHandler(req: Request, res: Response) {
+  const query = req.query.q as string;
+  if (!query) return res.status(400).json({ error: "Missing query param 'q'" });
+  const results = await searchEmails(query);
+  return res.json({ results });
 }
