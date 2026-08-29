@@ -11,11 +11,18 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+export interface EmailAttachment {
+  name: string;
+  contentType: string;
+  data: string; // base64
+}
+
 export interface SendEmailInput {
   to: string;
   subject: string;
   body: string;
   fromName?: string;
+  attachments?: EmailAttachment[];
 }
 
 export async function sendEmail(input: SendEmailInput) {
@@ -24,6 +31,12 @@ export async function sendEmail(input: SendEmailInput) {
     to: input.to,
     subject: input.subject,
     text: input.body,
+    attachments: (input.attachments || []).map((a) => ({
+      filename: a.name,
+      content: a.data,
+      encoding: 'base64',
+      contentType: a.contentType,
+    })),
   });
 
   const previewUrl = nodemailer.getTestMessageUrl(info);

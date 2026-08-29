@@ -1,6 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import { useEffect } from 'react';
 import {
@@ -33,8 +32,9 @@ export default function RichTextEditor({
 }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
-      StarterKit,
-      Underline,
+      StarterKit.configure({
+        // StarterKit v3 bundles Underline — no separate import needed
+      }),
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),

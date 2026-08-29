@@ -1,17 +1,42 @@
 import { ArrowLeft, Star, Archive, Trash2, ChevronDown, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import type { Email } from '../../types';
 
 interface EmailDetailViewProps {
   email: Email;
   onBack: () => void;
+  onDelete: (id: string) => Promise<void>;
+  isStarred: boolean;
+  onToggleStar: () => void;
+  isArchived: boolean;
+  onArchive: () => void;
 }
 
 export default function EmailDetailView({
   email,
   onBack,
+  onDelete,
+  isStarred,
+  onToggleStar,
+  isArchived,
+  onArchive,
 }: EmailDetailViewProps) {
   const { user } = useAuth();
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!window.confirm('Permanently delete this email? This cannot be undone.')) return;
+    setDeleting(true);
+    await onDelete(email.id);
+    setDeleting(false);
+  };
+
+  const handleArchive = () => {
+    toast.success(isArchived ? 'Email unarchived.' : 'Email archived.');
+    onArchive();
+  };
 
   const formattedDate = () => {
     try {
@@ -68,26 +93,36 @@ export default function EmailDetailView({
 
           <button
             type="button"
-            className="p-2 text-gray-400 hover:text-amber-500 transition-colors cursor-pointer"
-            title="Star"
+            onClick={onToggleStar}
+            className={`p-2 transition-colors cursor-pointer ${
+              isStarred ? 'text-amber-400 hover:text-amber-500' : 'text-gray-400 hover:text-amber-500'
+            }`}
+            title={isStarred ? 'Unstar' : 'Star'}
           >
-            <Star className="w-4 h-4" />
+            <Star className={`w-4 h-4 ${isStarred ? 'fill-amber-400' : ''}`} />
           </button>
 
           <button
             type="button"
-            className="p-2 text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
-            title="Archive"
+            onClick={handleArchive}
+            className={`p-2 transition-colors cursor-pointer rounded-lg ${
+              isArchived
+                ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                : 'text-gray-400 hover:text-blue-500 hover:bg-gray-100'
+            }`}
+            title={isArchived ? 'Unarchive email' : 'Archive email'}
           >
-            <Archive className="w-4 h-4" />
+            <Archive className={`w-4 h-4 ${isArchived ? 'text-blue-600' : ''}`} />
           </button>
 
           <button
             type="button"
-            className="p-2 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
-            title="Trash"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="p-2 text-gray-400 hover:text-red-500 transition-colors cursor-pointer disabled:opacity-40"
+            title="Delete"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className={`w-4 h-4 ${deleting ? 'animate-pulse' : ''}`} />
           </button>
 
           {/* User Avatar */}
@@ -141,13 +176,62 @@ export default function EmailDetailView({
           </div>
         </div>
 
-        {/* 3. Body Content: Plain email content with normal line height */}
+        {/* 3. Body Content */}
         <div className="text-base text-gray-800 leading-relaxed space-y-4 mb-8">
           <div
             dangerouslySetInnerHTML={{ __html: email.body }}
             className="prose max-w-none text-gray-800"
           />
         </div>
+
+        {/* 4. Attachments */}
+        {email.attachments && email.attachments.length > 0 && (
+          <div className="border-t border-gray-100 pt-6">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              {email.attachments.length} Attachment{email.attachments.length !== 1 ? 's' : ''}
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {email.attachments.map((att, idx) => {
+                const isImage = att.contentType.startsWith('image/');
+                const dataUrl = `data:${att.contentType};base64,${att.data}`;
+                return (
+                  <a
+                    key={idx}
+                    href={dataUrl}
+                    download={att.name}
+                    title={`Download ${att.name}`}
+                    className="group w-40 rounded-xl border border-gray-200 bg-white overflow-hidden text-xs shadow-sm hover:shadow-md hover:border-gray-300 transition-all"
+                  >
+                    {isImage ? (
+                      <img
+                        src={dataUrl}
+                        alt={att.name}
+                        className="w-full h-28 object-cover group-hover:opacity-90 transition-opacity"
+                      />
+                    ) : (
+                      <div className="w-full h-28 bg-gray-50 flex flex-col items-center justify-center text-gray-400 group-hover:bg-gray-100 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-9 h-9 mb-1.5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="text-[10px] text-gray-400 px-2 text-center truncate w-full">{att.contentType}</span>
+                      </div>
+                    )}
+                    <div className="p-2.5 border-t border-gray-100">
+                      <p className="font-semibold text-gray-800 truncate">{att.name}</p>
+                      {att.size && <p className="text-gray-400 mt-0.5">{att.size}</p>}
+                      <p className="text-green-600 font-medium mt-1 flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                      </p>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import RichTextEditor from '../../components/RichTextEditor';
 import SendLaterPopover from '../../components/SendLaterPopover';
 import { scheduleEmail } from '../../api/emails';
 import { getSenders, createSender } from '../../api/senders';
-import type { Sender } from '../../types';
+import type { Sender, EmailAttachment } from '../../types';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -39,7 +39,7 @@ export default function ComposePage({
 
   // UI Popover & Upload state
   const [showSendLaterPopover, setShowSendLaterPopover] = useState(false);
-  const [attachments, setAttachments] = useState<{ name: string; url: string; size: string }[]>([]);
+  const [attachments, setAttachments] = useState<EmailAttachment[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -109,15 +109,27 @@ export default function ComposePage({
     reader.readAsText(file);
   };
 
-  // Image Attachment Upload Handler
+  // File Attachment Upload Handler — converts to base64 for API transport
   const handleAttachmentUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const newAtts = files.map((f) => ({
-      name: f.name,
-      url: URL.createObjectURL(f),
-      size: `${(f.size / (1024 * 1024)).toFixed(1)} MB`,
-    }));
-    setAttachments((prev) => [...prev, ...newAtts]);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const base64 = (ev.target?.result as string).split(',')[1]; // strip data URL prefix
+        setAttachments((prev) => [
+          ...prev,
+          {
+            name: file.name,
+            contentType: file.type || 'application/octet-stream',
+            data: base64,
+            size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    // Reset input so the same file can be re-added if removed
+    e.target.value = '';
   };
 
   // Submit Handler
@@ -150,6 +162,7 @@ export default function ComposePage({
           body,
           senderId: fromSenderId,
           scheduledAt,
+          attachments: attachments.length > 0 ? attachments : undefined,
         });
         successCount++;
       } catch (err) {
@@ -180,7 +193,7 @@ export default function ComposePage({
       <input
         ref={attachmentInputRef}
         type="file"
-        accept="image/*"
+        accept="*"
         multiple
         onChange={handleAttachmentUpload}
         className="hidden"
@@ -396,25 +409,47 @@ export default function ComposePage({
           />
         </div>
 
-        {/* Image Attachment Thumbnails Preview */}
+        {/* Attachment Thumbnails / File List Preview */}
         {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-4 pt-4 border-t border-gray-100">
-            {attachments.map((att, idx) => (
-              <div
-                key={idx}
-                className="w-36 rounded-xl border border-gray-200 bg-white overflow-hidden text-xs shadow-xs"
-              >
-                <img
-                  src={att.url}
-                  alt={att.name}
-                  className="w-full h-28 object-cover"
-                />
-                <div className="p-2.5">
-                  <p className="font-bold text-gray-800 truncate">{att.name}</p>
-                  <p className="text-xs text-gray-400">{att.size}</p>
+          <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-100">
+            {attachments.map((att, idx) => {
+              const isImage = att.contentType.startsWith('image/');
+              const dataUrl = `data:${att.contentType};base64,${att.data}`;
+              return (
+                <div
+                  key={idx}
+                  className="relative group w-36 rounded-xl border border-gray-200 bg-white overflow-hidden text-xs shadow-sm"
+                >
+                  {isImage ? (
+                    <img
+                      src={dataUrl}
+                      alt={att.name}
+                      className="w-full h-28 object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-28 bg-gray-50 flex flex-col items-center justify-center text-gray-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="text-[10px] text-gray-400 px-2 text-center truncate w-full">{att.contentType}</span>
+                    </div>
+                  )}
+                  <div className="p-2.5">
+                    <p className="font-bold text-gray-800 truncate">{att.name}</p>
+                    <p className="text-gray-400">{att.size}</p>
+                  </div>
+                  {/* Remove button */}
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                    className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/50 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

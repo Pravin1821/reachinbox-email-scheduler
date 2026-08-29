@@ -45,6 +45,7 @@ model Email {
 
   failureReason String?
   previewUrl    String?
+  attachments   Json?       // Array of { name, contentType, data (base64) }
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

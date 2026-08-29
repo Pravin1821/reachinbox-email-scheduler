@@ -5,12 +5,19 @@ import { z } from "zod";
 import { indexEmail, ensureEmailIndex } from "../services/search";
 import { searchEmails } from "../services/search";
 
+const attachmentSchema = z.object({
+  name: z.string(),
+  contentType: z.string(),
+  data: z.string(), // base64 encoded file content
+});
+
 const scheduleEmailSchema = z.object({
   to: z.string().email(),
   subject: z.string().min(1),
   body: z.string().min(1),
   senderId: z.string().uuid(),
   scheduledAt: z.coerce.date(),
+  attachments: z.array(attachmentSchema).optional().default([]),
 });
 
 export async function scheduleEmail(req: Request, res: Response) {
@@ -19,7 +26,7 @@ export async function scheduleEmail(req: Request, res: Response) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const { to, subject, body, senderId, scheduledAt } = parsed.data;
+  const { to, subject, body, senderId, scheduledAt, attachments } = parsed.data;
 
   const sender = await prisma.sender.findUnique({ where: { id: senderId } });
   if (!sender) {
@@ -27,7 +34,8 @@ export async function scheduleEmail(req: Request, res: Response) {
   }
 
   const email = await prisma.email.create({
-    data: { to, subject, body, senderId, scheduledAt, status: "SCHEDULED" },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: { to, subject, body, senderId, scheduledAt, status: "SCHEDULED", attachments } as any,
   });
   await indexEmail({ ...email, sentAt: null });
   try {
@@ -67,3 +75,15 @@ export async function searchEmailsHandler(req: Request, res: Response) {
   const results = await searchEmails(query);
   return res.json({ results });
 }
+
+export async function deleteEmail(req: Request, res: Response) {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: "Missing email id" });
+
+  const email = await prisma.email.findUnique({ where: { id } });
+  if (!email) return res.status(404).json({ error: "Email not found" });
+
+  await prisma.email.delete({ where: { id } });
+  return res.status(200).json({ success: true });
+}
+

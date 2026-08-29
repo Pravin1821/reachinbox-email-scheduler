@@ -67,6 +67,7 @@ const worker = new Worker(
         subject: email.subject,
         body: email.body,
         fromName: email.sender.name,
+        attachments: Array.isArray((email as any).attachments) ? (email as any).attachments : [],
       });
 
       await prisma.email.update({

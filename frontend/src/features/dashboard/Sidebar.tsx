@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Clock, Send, ChevronDown, LogOut } from 'lucide-react';
+import { Clock, Send, Archive, ChevronDown, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getSlackStatus, disconnectSlack } from '../../api/slack';
 import toast from 'react-hot-toast';
@@ -7,10 +7,11 @@ import toast from 'react-hot-toast';
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 
 interface SidebarProps {
-  activeTab: 'scheduled' | 'sent';
-  onSelectTab: (tab: 'scheduled' | 'sent') => void;
+  activeTab: 'scheduled' | 'sent' | 'archived';
+  onSelectTab: (tab: 'scheduled' | 'sent' | 'archived') => void;
   scheduledCount: number;
   sentCount: number;
+  archivedCount: number;
   onCompose: () => void;
 }
 
@@ -19,6 +20,7 @@ export default function Sidebar({
   onSelectTab,
   scheduledCount,
   sentCount,
+  archivedCount,
   onCompose,
 }: SidebarProps) {
   const { user, logout } = useAuth();
@@ -175,6 +177,31 @@ export default function Sidebar({
           >
             {sentCount}
           </span>
+        </button>
+
+        {/* Archived Nav Item */}
+        <button
+          type="button"
+          onClick={() => onSelectTab('archived')}
+          className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm transition-colors cursor-pointer ${
+            activeTab === 'archived'
+              ? 'bg-blue-50 text-blue-600 font-bold'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Archive className="w-4 h-4" />
+            <span>Archived</span>
+          </div>
+          {archivedCount > 0 && (
+            <span
+              className={`text-xs ${
+                activeTab === 'archived' ? 'text-blue-600 font-bold' : 'text-gray-400'
+              }`}
+            >
+              {archivedCount}
+            </span>
+          )}
         </button>
       </nav>
 

@@ -48,3 +48,11 @@ export async function searchEmails(query: string): Promise<SearchEmailsResponse>
   });
   return res.data;
 }
+
+/**
+ * DELETE /api/emails/:id
+ * Permanently deletes an email record.
+ */
+export async function deleteEmail(id: string): Promise<void> {
+  await apiClient.delete(`/api/emails/${id}`);
+}

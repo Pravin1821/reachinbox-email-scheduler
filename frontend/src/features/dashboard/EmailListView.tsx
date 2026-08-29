@@ -5,10 +5,12 @@ import type { Email } from '../../types';
 interface EmailListViewProps {
   emails: Email[];
   loading: boolean;
-  activeTab: 'scheduled' | 'sent';
+  activeTab: 'scheduled' | 'sent' | 'archived';
   onSelectEmail: (email: Email) => void;
   onRefresh: () => void;
   onSearch: (query: string) => void;
+  starredIds: Set<string>;
+  onToggleStar: (id: string) => void;
 }
 
 export default function EmailListView({
@@ -18,13 +20,14 @@ export default function EmailListView({
   onSelectEmail,
   onRefresh,
   onSearch,
+  starredIds,
+  onToggleStar,
 }: EmailListViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SCHEDULED' | 'SENT' | 'FAILED' | 'RATE_LIMITED'>('ALL');
   const [starredOnly, setStarredOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
-  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
 
   const filterRef = useRef<HTMLDivElement>(null);
 
@@ -49,17 +52,7 @@ export default function EmailListView({
     onSearch(q);
   };
 
-  const toggleStar = (emailId: string) => {
-    setStarredIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(emailId)) {
-        next.delete(emailId);
-      } else {
-        next.add(emailId);
-      }
-      return next;
-    });
-  };
+  const toggleStar = (emailId: string) => onToggleStar(emailId);
 
   const hasActiveFilters = statusFilter !== 'ALL' || starredOnly || sortBy !== 'newest';
 
@@ -272,7 +265,13 @@ export default function EmailListView({
               <Clock className="w-7 h-7" />
             </div>
             <p className="text-base font-semibold text-gray-700">
-              {hasActiveFilters ? 'No emails match your filter criteria' : `No ${activeTab} emails found`}
+              {hasActiveFilters
+                ? 'No emails match your filter criteria'
+                : activeTab === 'scheduled'
+                ? 'No scheduled emails found'
+                : activeTab === 'sent'
+                ? 'No sent emails found'
+                : 'No archived emails found'}
             </p>
             <p className="text-sm text-gray-400 mt-1">
               {hasActiveFilters ? (
@@ -285,8 +284,10 @@ export default function EmailListView({
                 </button>
               ) : activeTab === 'scheduled' ? (
                 'Emails scheduled to send in the future will appear here.'
-              ) : (
+              ) : activeTab === 'sent' ? (
                 'Emails that have been delivered will appear here.'
+              ) : (
+                'Emails you archive will appear here.'
               )}
             </p>
           </div>

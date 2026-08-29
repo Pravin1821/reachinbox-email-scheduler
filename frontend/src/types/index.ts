@@ -16,6 +16,14 @@ export interface Sender {
   createdAt: string;
 }
 
+// ─── Email Attachment ──────────────────────────────────────────────────────
+export interface EmailAttachment {
+  name: string;
+  contentType: string;
+  data: string; // base64 encoded
+  size?: string; // human-readable e.g. "1.2 MB"
+}
+
 // ─── Email ─────────────────────────────────────────────────────────────────
 export interface Email {
   id: string;
@@ -31,6 +39,7 @@ export interface Email {
   bullJobId: string | null;
   failureReason: string | null;
   previewUrl?: string | null;
+  attachments?: EmailAttachment[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -56,6 +65,7 @@ export interface ScheduleEmailPayload {
   body: string;
   senderId: string;
   scheduledAt: string; // ISO 8601 date string
+  attachments?: EmailAttachment[];
 }
 
 export interface CreateSenderPayload {
