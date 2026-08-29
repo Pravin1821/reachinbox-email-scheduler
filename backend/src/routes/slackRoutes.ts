@@ -32,7 +32,7 @@ router.get("/callback", async (req, res) => {
       create: {
         teamId: result.team.id,
         accessToken: result.access_token,
-        channelId: process.env.SLACK_DEFAULT_CHANNEL_ID || "general",
+        channelId: env.SLACK_DEFAULT_CHANNEL_ID,
       },
     });
 

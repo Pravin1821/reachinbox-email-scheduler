@@ -68,5 +68,6 @@ export async function searchEmails(query: string) {
     },
   });
 
+  // hit._source type is unknown in @elastic/elasticsearch v8 without schema generics
   return result.hits.hits.map((hit: any) => ({ id: hit._id, score: hit._score, ...hit._source }));
 }

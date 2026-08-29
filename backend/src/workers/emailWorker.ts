@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../config/redis";
 import { EMAIL_QUEUE_NAME, scheduleEmailJob } from "../queues/emailQueue";
 import { prisma } from "../config/prisma";
+import { env } from "../config/env";
 import { sendEmail } from "../services/mailer";
 import {
   checkAndIncrementRateLimit,
@@ -85,7 +86,7 @@ const worker = new Worker(
         previewUrl: previewUrl ? String(previewUrl) : null,
       });
       return { messageId, previewUrl };
-    } catch (err: any) {
+    } catch (err: any) { // nodemailer/transport errors may not extend native Error
       await prisma.email.update({
         where: { id: emailId },
         data: { status: "FAILED", failureReason: err.message },
@@ -96,7 +97,7 @@ const worker = new Worker(
   },
   {
     connection: redisConnection,
-    concurrency: 5,
+    concurrency: env.WORKER_CONCURRENCY,
   }
 );
 

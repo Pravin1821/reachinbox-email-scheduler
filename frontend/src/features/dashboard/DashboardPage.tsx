@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import toast from 'react-hot-toast';
 import Sidebar from './Sidebar';
 import EmailListView from './EmailListView';
 import EmailDetailView from './EmailDetailView';
@@ -78,7 +79,7 @@ export default function DashboardPage() {
       }));
       setEmails(mapped);
     } catch {
-      // fallback
+      toast.error('Search failed — please try again.');
     } finally {
       setLoading(false);
     }

@@ -22,5 +22,8 @@ export const env = {
   SLACK_CLIENT_ID: required("SLACK_CLIENT_ID"),
   SLACK_CLIENT_SECRET: required("SLACK_CLIENT_SECRET"),
   SLACK_REDIRECT_URI: required("SLACK_REDIRECT_URI"),
+  // Optional — defaults used when not set
   FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:3000",
+  SLACK_DEFAULT_CHANNEL_ID: process.env.SLACK_DEFAULT_CHANNEL_ID || "general",
+  WORKER_CONCURRENCY: parseInt(process.env.WORKER_CONCURRENCY || "5", 10),
 };

@@ -33,7 +33,7 @@ A full-stack email scheduling system with smart rate limiting, bulk CSV import, 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/yourname/reachinbox-email-scheduler.git
+git clone https://github.com/Pravin1821/reachinbox-email-scheduler.git
 cd reachinbox-email-scheduler
 ```
 
@@ -53,7 +53,7 @@ This starts three containers:
 
 ### 3. Configure environment variables
 
-**Backend** — create/edit `backend/.env`:
+**Backend** — create/edit `backend/.env` (copy from `backend/.env.example`):
 
 ```env
 DATABASE_URL="postgresql://reachinbox:reachinbox@localhost:5432/reachinbox?schema=public"
@@ -79,10 +79,13 @@ FRONTEND_URL="http://localhost:5173"
 SLACK_CLIENT_ID="your-slack-client-id"
 SLACK_CLIENT_SECRET="your-slack-client-secret"
 SLACK_REDIRECT_URI="http://localhost:4000/api/slack/callback"
-SLACK_DEFAULT_CHANNEL_ID="C0XXXXXXXXX"  # Slack channel ID to send notifications to
+SLACK_DEFAULT_CHANNEL_ID="C0XXXXXXXXX"  # Slack channel ID to send rate-limit notifications to
+
+# BullMQ worker concurrency (number of emails processed in parallel)
+WORKER_CONCURRENCY=5
 ```
 
-**Frontend** — create/edit `frontend/.env`:
+**Frontend** — create/edit `frontend/.env` (copy from `frontend/.env.example`):
 
 ```env
 VITE_API_BASE_URL=http://localhost:4000
@@ -92,10 +95,18 @@ VITE_API_BASE_URL=http://localhost:4000
 
 ```bash
 cd backend
+npm install
 npx prisma migrate dev
 ```
 
-### 5. Start the three processes
+### 5. Install frontend dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### 6. Start the three processes
 
 Open **three separate terminals**:
 
@@ -139,7 +150,7 @@ Then open **http://localhost:5173** in your browser.
    - `channels:read`
 3. Add **Redirect URL**: `http://localhost:4000/api/slack/callback`
 4. Under **Basic Information**, copy Client ID and Client Secret into `backend/.env`
-5. Set `SLACK_DEFAULT_CHANNEL_ID` to the channel ID where rate-limit notifications should be sent (right-click the channel in Slack → Copy link, the ID is at the end)
+5. Set `SLACK_DEFAULT_CHANNEL_ID` to the channel ID where rate-limit notifications should be sent (right-click the channel in Slack → Copy link; the ID is the `C…` string at the end of the URL)
 6. Install the app to your workspace and invite the bot to the target channel (`/invite @your-bot-name`)
 
 ---
@@ -159,12 +170,12 @@ POST /api/emails/schedule
         │
         ▼
   BullMQ: emailQueue.add(emailId, { delay: scheduledAt - now })
-          ← jobId = email.id (idempotent — guarantees no duplicate jobs)
+          └─ jobId = email.id (idempotent — guarantees no duplicate jobs)
         │
   [delay elapses]
         │
         ▼
-  Worker picks up job
+  Worker picks up job (concurrency controlled via WORKER_CONCURRENCY env var)
         │
         ├─ Rate limit check (Redis INCR per sender-hour, atomic)
         │       │
@@ -177,6 +188,14 @@ POST /api/emails/schedule
         └─ Elasticsearch: update index
 ```
 
+### Delay Between Sends
+
+Per-recipient delay is set in the compose form (default: **60 seconds**). Each recipient's `scheduledAt` is offset by `index × delaySeconds` from the campaign start time. This is applied at job-creation time, so the BullMQ queue naturally staggers delivery without needing a worker-level sleep.
+
+### Hourly Rate Limit
+
+The rate limit is configured **per Sender** via `maxEmailsPerHour` (default: 200). The counter is a Redis key `ratelimit:{senderId}:{YYYY-MM-DDTHH}` (atomic INCR, TTL 2 hours). When the limit is hit, the job is **requeued to the next hour window** — never dropped.
+
 ### Restart Persistence & Reconciliation
 
 PostgreSQL is the **source of truth**. Redis/BullMQ is derived state.
@@ -184,16 +203,16 @@ PostgreSQL is the **source of truth**. Redis/BullMQ is derived state.
 On every server boot, `reconcileOnBoot()` runs before the first request is served:
 
 1. Finds all emails with `status IN (SCHEDULED, RATE_LIMITED)`
-2. For each, calls `emailQueue.getJob(emailId)` — if job is missing from Redis (e.g., after `FLUSHALL`), it re-enqueues with the correct delay
+2. For each, calls `emailQueue.getJob(emailId)` — if the job is missing from Redis (e.g., after `FLUSHALL` or ephemeral Redis), it re-enqueues with the correct delay
 3. Resets any `PROCESSING` rows (server crash mid-send) back to `SCHEDULED`
 
 This means a full Redis wipe is safe — emails are never permanently lost.
 
-### Rate Limiting (Redis Atomic INCR)
+### Rate Limiting — Redis Atomic INCR
 
 ```
-key:  rate:{senderId}:{YYYY-MM-DDTHH}    (e.g., rate:abc123:2024-01-15T14)
-TTL:  2 hours (sliding window cleanup)
+key:  ratelimit:{senderId}:{YYYY-MM-DDTHH}    (e.g., ratelimit:abc123:2024-01-15T14)
+TTL:  3600 seconds (auto-cleanup after the window ends)
 
 Algorithm:
   INCR key
@@ -204,7 +223,11 @@ Algorithm:
     → proceed to send
 ```
 
-All counters are per-sender, per-hour. The key is auto-expired after 2 hours.
+All counters are per-sender, per-hour. The key is auto-expired after 1 hour.
+
+### Idempotency
+
+BullMQ jobs are created with `jobId = email.id` (the UUID). BullMQ deduplicates by `jobId`, so scheduling the same email twice never creates two jobs. Additionally, `bullJobId` has a `@unique` constraint in Prisma — preventing two DB rows from claiming the same BullMQ job.
 
 ### Session Authentication
 
@@ -212,6 +235,18 @@ All counters are per-sender, per-hour. The key is auto-expired after 2 hours.
 - Session stored in Redis via `connect-redis` (`express-session`)
 - Frontend uses `credentials: 'include'` on every API call to send the HTTP-only session cookie cross-port (5173 → 4000)
 - No JWT, no localStorage — session is server-side only
+
+---
+
+## BullMQ Dashboard
+
+The Bull Board queue dashboard is available at:
+
+```
+http://localhost:4000/admin/queues
+```
+
+> ⚠️ The dashboard has no authentication — suitable for local development only.
 
 ---
 
@@ -224,40 +259,47 @@ All counters are per-sender, per-hour. The key is auto-expired after 2 hours.
 | GET | `/api/auth/google/callback` | No | OAuth callback |
 | GET | `/api/auth/me` | No | Get current session user |
 | POST | `/api/auth/logout` | No | Destroy session |
-| GET | `/api/senders` | ✅ | List all senders |
-| POST | `/api/senders` | ✅ | Create a sender |
-| POST | `/api/emails/schedule` | ✅ | Schedule an email |
-| GET | `/api/emails/scheduled` | ✅ | List SCHEDULED/QUEUED/RATE_LIMITED emails |
-| GET | `/api/emails/sent` | ✅ | List SENT/FAILED emails |
-| GET | `/api/emails/search?q=` | ✅ | Elasticsearch full-text search |
-| GET | `/api/slack/connect` | ✅ | Initiate Slack OAuth |
+| GET | `/api/senders` | ✓ | List all senders |
+| POST | `/api/senders` | ✓ | Create a sender |
+| POST | `/api/emails/schedule` | ✓ | Schedule an email |
+| GET | `/api/emails/scheduled` | ✓ | List SCHEDULED/QUEUED/RATE_LIMITED emails |
+| GET | `/api/emails/sent` | ✓ | List SENT/FAILED emails |
+| GET | `/api/emails/search?q=` | ✓ | Elasticsearch full-text search |
+| GET | `/api/slack/connect` | ✓ | Initiate Slack OAuth |
 | GET | `/api/slack/callback` | No | Slack OAuth callback |
-| GET | `/api/slack/status` | ✅ | Check if Slack is connected |
-| DELETE | `/api/slack` | ✅ | Disconnect Slack |
+| GET | `/api/slack/status` | ✓ | Check if Slack is connected |
+| DELETE | `/api/slack` | ✓ | Disconnect Slack |
 | GET | `/admin/queues` | No | Bull Board dashboard |
 
 ---
 
-## Maintenance & Utility Scripts
+## Environment Variables Reference
 
-Located in `backend/src/scripts/`:
+### Backend (`backend/.env`)
 
-- `fixStuckEmails.ts` — Finds any stuck `SCHEDULED` or `RATE_LIMITED` emails with expired schedules and dead BullMQ jobs, cleans old Redis job artifacts, and immediately reschedules them for processing:
-  ```bash
-  cd backend
-  npx ts-node src/scripts/fixStuckEmails.ts
-  ```
-- `checkDb.ts` — Prints current senders, scheduled emails, and sent emails from PostgreSQL:
-  ```bash
-  cd backend
-  npx ts-node src/scripts/checkDb.ts
-  ```
-- `seedTestData.ts` — Populates sample test data for local verification:
-  ```bash
-  cd backend
-  npx ts-node src/scripts/seedTestData.ts
-  ```
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | ✓ | PostgreSQL connection string |
+| `REDIS_URL` | ✓ | Redis connection URL (used by BullMQ + sessions) |
+| `PORT` | — | Backend port (default: `4000`) |
+| `ETHEREAL_USER` | ✓ | Ethereal test SMTP username |
+| `ETHEREAL_PASS` | ✓ | Ethereal test SMTP password |
+| `GOOGLE_CLIENT_ID` | ✓ | Google OAuth 2.0 client ID |
+| `GOOGLE_CLIENT_SECRET` | ✓ | Google OAuth 2.0 client secret |
+| `GOOGLE_CALLBACK_URL` | ✓ | Backend OAuth callback URL (e.g., `http://localhost:4000/api/auth/google/callback`) |
+| `SESSION_SECRET` | ✓ | Long random string for `express-session` signing |
+| `FRONTEND_URL` | — | Frontend origin for CORS + post-OAuth redirects (default: `http://localhost:3000`) |
+| `SLACK_CLIENT_ID` | ✓ | Slack app Client ID |
+| `SLACK_CLIENT_SECRET` | ✓ | Slack app Client Secret |
+| `SLACK_REDIRECT_URI` | ✓ | Slack OAuth redirect URL (e.g., `http://localhost:4000/api/slack/callback`) |
+| `SLACK_DEFAULT_CHANNEL_ID` | — | Slack channel ID for rate-limit notifications (falls back to `"general"`) |
+| `WORKER_CONCURRENCY` | — | Number of emails the BullMQ worker processes in parallel (default: `5`) |
 
+### Frontend (`frontend/.env`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_API_BASE_URL` | ✓ | Backend base URL (e.g., `http://localhost:4000`) |
 
 ---
 
@@ -265,15 +307,16 @@ Located in `backend/src/scripts/`:
 
 ### Backend
 
-- [x] **Email Scheduler** — POST /api/emails/schedule creates a BullMQ delayed job; jobId = email UUID (idempotent)
+- [x] **Email Scheduler** — `POST /api/emails/schedule` creates a BullMQ delayed job; `jobId = email.id` (idempotent)
 - [x] **PostgreSQL Persistence** — Prisma ORM, Sender/Email/RateLimitWindow/SlackConnection models, migrations
 - [x] **Rate Limiting** — Redis atomic INCR per sender-hour; automatically requeues breaching emails to next hour window
-- [x] **Concurrency Safety** — BullMQ worker with concurrency=5; Redis INCR is atomic (no race condition under concurrent workers)
+- [x] **Configurable Concurrency** — `WORKER_CONCURRENCY` env var controls parallel sends (default 5)
 - [x] **Restart Safety** — Boot-time reconciler re-enqueues orphaned jobs after Redis wipe
 - [x] **Slack Notifications** — Real `chat.postMessage` API call when rate limit is hit
 - [x] **Google OAuth** — Passport.js server-side flow, session stored in Redis
 - [x] **Elasticsearch** — Index on schedule + update on send; full-text search across to/subject/body
 - [x] **Bull Board** — Queue monitoring dashboard at `/admin/queues`
+- [x] **Idempotency** — BullMQ `jobId` deduplication + DB `@unique` constraint on `bullJobId`
 
 ### Frontend
 
@@ -281,10 +324,10 @@ Located in `backend/src/scripts/`:
 - [x] **Session-based Auth** — Checks `/api/auth/me` on load; shows loading spinner; redirects on 401
 - [x] **Dashboard** — Scheduled and Sent email tabs with live data
 - [x] **Compose Modal** — Subject, body, recipient paste/CSV upload, start time, per-email delay, sender dropdown
-- [x] **Sender Management** — Inline "Create Sender" form when no senders exist
+- [x] **Sender Management** — Inline "Create Sender" form; per-sender `maxEmailsPerHour` limit
 - [x] **Bulk CSV Import** — Parse and schedule one job per recipient with configurable delay
-- [x] **Search** — Elasticsearch-backed debounced search within each tab
-- [x] **Loading / Empty States** — Spinner during fetch, descriptive empty state messages
+- [x] **Search** — Elasticsearch-backed full-text search within each tab
+- [x] **Loading / Empty States** — Skeleton rows during fetch, descriptive empty state messages
 - [x] **Slack Connect** — "Connect Slack" button redirects to OAuth; live connected/disconnected status; disconnect button
 
 ---
@@ -292,22 +335,19 @@ Located in `backend/src/scripts/`:
 ## Assumptions, Shortcuts, and Trade-offs
 
 ### PostgreSQL over MySQL
-PostgreSQL was chosen for its native UUID support (`@default(uuid())`), superior indexing (composite indexes on `senderId + status`, `scheduledAt`), and better Prisma support. MySQL would require `uuid()` workarounds.
+PostgreSQL was chosen for its native UUID support, superior indexing, and better Prisma support.
 
 ### Slack connection is global, not per-tenant
-The `SlackConnection` model stores one workspace-wide connection. There's no multi-tenant user model (no `Users` table — authentication is stateless via Google session). A production system would store a SlackConnection per authenticated user or organisation.
+The `SlackConnection` model stores one workspace-wide connection. There's no multi-tenant user model — authentication is stateless via Google session. A production system would store a SlackConnection per authenticated user or organisation.
 
 ### Session-only auth, no persisted Users table
-After Google OAuth, the user's name/email/avatar is serialized directly into the Redis session. There's no Users database table. This means user data is lost if the session expires. A production system would upsert a Users row on each login.
+After Google OAuth, the user's name/email/avatar is serialized directly into the Redis session. There's no Users database table — user data is lost if the session expires. A production system would upsert a Users row on each login.
 
 ### Ethereal SMTP (not real email delivery)
-Emails are sent to [Ethereal](https://ethereal.email) — a fake SMTP server that captures messages for inspection. The preview URL is logged by the worker. To send real emails, replace `mailer.ts` with your SMTP provider (SendGrid, SES, etc.).
+Emails are sent to [Ethereal](https://ethereal.email) — a fake SMTP server that captures messages for inspection. The preview URL is stored on the Email row and shown in the UI. To send real emails, replace `mailer.ts` with your SMTP provider.
 
-### No multi-worker horizontal scaling
-The rate limiter uses Redis INCR (atomic) so it is safe under concurrent workers on the same machine. However, the `SLACK_DEFAULT_CHANNEL_ID` is a single env var — a multi-tenant deployment would need per-sender Slack channels.
-
-### Node 20 LTS required
-Prisma 5.x uses `@prisma/client` that is not compatible with Node 22+/24 due to native addon ABI changes. Pin to Node 20 LTS.
+### Per-email delay is applied at job-creation time
+Each recipient's `scheduledAt` is staggered by `index × delaySeconds` when the compose form is submitted. The BullMQ queue naturally spaces out delivery. This is equivalent to a worker-level delay and avoids the need for a BullMQ `rateLimiter` option for this use case.
 
 ### Bull Board has no auth
 The `/admin/queues` dashboard is exposed without authentication — suitable for local development only. Add middleware to protect it in any deployed environment.
@@ -341,12 +381,11 @@ reachinbox-email-scheduler/
 └── frontend/
     └── src/
         ├── api/                # client.ts, emails.ts, senders.ts, slack.ts
+        ├── components/         # Button, Input, Modal, Table, Spinner, Avatar, Badge …
         ├── context/            # AuthContext.tsx (server-session)
         ├── features/
         │   ├── auth/           # LoginPage.tsx
-        │   ├── compose/        # ComposeModal.tsx
-        │   ├── dashboard/      # DashboardPage.tsx, Header.tsx
-        │   ├── scheduled-emails/
-        │   └── sent-emails/
-        └── types/              # TypeScript interfaces
+        │   ├── compose/        # ComposeModal.tsx, ComposePage.tsx
+        │   └── dashboard/      # DashboardPage.tsx, Header.tsx, EmailListView.tsx …
+        └── types/              # TypeScript interfaces (Email, Sender, SessionUser …)
 ```
