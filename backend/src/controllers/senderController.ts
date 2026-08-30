@@ -1,15 +1,31 @@
 import { Request, Response } from "express";
 import { prisma } from "../config/prisma";
+import { env } from "../config/env";
 import { z } from "zod";
 
 /**
  * GET /api/senders
  * Returns all Sender rows ordered by creation date.
+ * Automatically ensures the default Ethereal sender exists if DB has no senders.
  */
 export async function getSenders(req: Request, res: Response) {
-  const senders = await prisma.sender.findMany({
+  let senders = await prisma.sender.findMany({
     orderBy: { createdAt: "asc" },
   });
+
+  if (senders.length === 0 && env.ETHEREAL_USER) {
+    const defaultSender = await prisma.sender.upsert({
+      where: { email: env.ETHEREAL_USER },
+      update: {},
+      create: {
+        name: "ReachInbox (Ethereal)",
+        email: env.ETHEREAL_USER,
+        maxEmailsPerHour: 200,
+      },
+    });
+    senders = [defaultSender];
+  }
+
   return res.json({ senders });
 }
 

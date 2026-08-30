@@ -21,7 +21,13 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+const isProduction =
+  process.env.NODE_ENV === "production" &&
+  !env.FRONTEND_URL.startsWith("http://localhost") &&
+  !env.FRONTEND_URL.startsWith("http://127.0.0.1");
 
 app.use(
   session({
@@ -31,8 +37,8 @@ app.use(
     cookie: {
       maxAge: 24 * 60 * 60 * 1000,
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
     },
   })
 );
@@ -52,7 +58,25 @@ app.use("/api/slack", slackRoutes);
 
 app.use(errorHandler);
 
+import { prisma } from "./config/prisma";
+
+async function ensureDefaultSender() {
+  if (env.ETHEREAL_USER) {
+    await prisma.sender.upsert({
+      where: { email: env.ETHEREAL_USER },
+      update: {},
+      create: {
+        name: "ReachInbox (Ethereal)",
+        email: env.ETHEREAL_USER,
+        maxEmailsPerHour: 200,
+      },
+    });
+    console.log(`[senders] default Ethereal sender ready: ${env.ETHEREAL_USER}`);
+  }
+}
+
 async function start() {
+  await ensureDefaultSender().catch((err) => console.warn("[senders] failed to seed default sender:", err.message));
   await ensureEmailIndex().catch(() => console.warn("[search] skipping ES init — not critical for deploy demo"));
   await reconcileOnBoot();
   app.listen(env.PORT, () => {

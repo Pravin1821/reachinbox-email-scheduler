@@ -1,14 +1,15 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
+import { useAuth } from '../../context/AuthContext';
 
 export default function LoginPage() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { initiateLogin, loginWithEmail } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (searchParams.get('error')) {
@@ -17,21 +18,25 @@ export default function LoginPage() {
   }, [searchParams]);
 
   function handleGoogleLogin() {
-    window.location.href = `${API_BASE}/api/auth/google`;
+    initiateLogin();
   }
 
-  function handleInteractionNotice() {
-    const msg = "Email/password login isn't available — please use Google Login above.";
-    setFeedback(msg);
-    toast.error(msg, {
-      duration: 4000,
-      icon: 'ℹ️',
-    });
-  }
-
-  function handleEmailLogin(e: FormEvent) {
+  async function handleEmailLogin(e: FormEvent) {
     e.preventDefault();
-    handleInteractionNotice();
+    if (!email.trim()) {
+      toast.error('Please enter your email');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await loginWithEmail(email.trim(), password);
+      toast.success('Logged in successfully!');
+      navigate('/dashboard');
+    } catch (err: any) {
+      toast.error(err.message || 'Login failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -91,9 +96,9 @@ export default function LoginPage() {
           <div>
             <input
               type="email"
+              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onFocus={handleInteractionNotice}
               placeholder="Email ID"
               className="w-full bg-gray-100 border-0 rounded-lg px-4 py-3 text-sm text-gray-800 placeholder-gray-400 outline-none focus:bg-gray-50 focus:ring-1 focus:ring-green-600 transition-all"
             />
@@ -105,25 +110,18 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              onFocus={handleInteractionNotice}
               placeholder="Password"
               className="w-full bg-gray-100 border-0 rounded-lg px-4 py-3 text-sm text-gray-800 placeholder-gray-400 outline-none focus:bg-gray-50 focus:ring-1 focus:ring-green-600 transition-all"
             />
           </div>
 
-          {/* Inline feedback message */}
-          {feedback && (
-            <p className="text-xs text-amber-600 font-medium px-1 py-0.5 leading-snug">
-              {feedback}
-            </p>
-          )}
-
           {/* 6. Login button (Solid green bg-green-600, rounded-lg, bold white text) */}
           <button
             type="submit"
-            className="w-full py-3 px-4 rounded-lg bg-green-600 hover:bg-green-700 text-white font-bold text-sm shadow-sm transition-all mt-4 cursor-pointer"
+            disabled={isSubmitting}
+            className="w-full py-3 px-4 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-bold text-sm shadow-sm transition-all mt-4 cursor-pointer"
           >
-            Login
+            {isSubmitting ? 'Logging in…' : 'Login'}
           </button>
         </form>
       </div>

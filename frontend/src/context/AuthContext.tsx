@@ -13,6 +13,8 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 interface AuthContextValue extends AuthState {
   /** Initiates Google OAuth by doing a full-page redirect to the backend. */
   initiateLogin: () => void;
+  /** Logs in using an email address, establishing a server session. */
+  loginWithEmail: (email: string, password?: string) => Promise<void>;
   /** Calls POST /api/auth/logout (server destroys session), then clears local state. */
   logout: () => Promise<void>;
 }
@@ -53,6 +55,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = `${API_BASE}/api/auth/google`;
   }, []);
 
+  /** Logs in with email & establishes server session */
+  const loginWithEmail = useCallback(async (email: string, password?: string) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Login failed');
+      }
+      const { user: sessionUser } = (await res.json()) as { user: SessionUser };
+      setUser(sessionUser);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   /** Destroys the server session, then clears local user state. */
   const logout = useCallback(async () => {
     try {
@@ -68,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, initiateLogin, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, initiateLogin, loginWithEmail, logout }}>
       {children}
     </AuthContext.Provider>
   );

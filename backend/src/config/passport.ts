@@ -9,6 +9,12 @@ export interface SessionUser {
   avatar: string;
 }
 
+declare global {
+  namespace Express {
+    interface User extends SessionUser {}
+  }
+}
+
 passport.use(
   new GoogleStrategy(
     {
