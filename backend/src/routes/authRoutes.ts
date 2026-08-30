@@ -8,10 +8,12 @@ router.get("/google", passport.authenticate("google", { scope: ["profile", "emai
 
 router.get(
   "/google/callback",
-  passport.authenticate("google", { failureRedirect: `${env.FRONTEND_URL}/login?error=1` }),
+  passport.authenticate("google", {
+    failureRedirect: `${env.FRONTEND_URL.replace(/\/+$/, "")}/login?error=1`,
+  }),
   (req, res) => {
     // Successful login — send them back to the frontend dashboard.
-    res.redirect(`${env.FRONTEND_URL}/dashboard`);
+    res.redirect(`${env.FRONTEND_URL.replace(/\/+$/, "")}/dashboard`);
   }
 );
 

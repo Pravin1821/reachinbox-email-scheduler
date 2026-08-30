@@ -6,9 +6,10 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
+import toast from 'react-hot-toast';
 import type { SessionUser, AuthState } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 
 interface AuthContextValue extends AuthState {
   /** Initiates Google OAuth by doing a full-page redirect to the backend. */
@@ -52,6 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /** Starts Google OAuth: full-page redirect so the browser carries the cookie. */
   const initiateLogin = useCallback(() => {
+    if (!API_BASE) {
+      toast.error('API URL is not set. Please add VITE_API_BASE_URL in Vercel environment variables.');
+      return;
+    }
     window.location.href = `${API_BASE}/api/auth/google`;
   }, []);
 

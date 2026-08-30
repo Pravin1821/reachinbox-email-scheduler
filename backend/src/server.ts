@@ -20,25 +20,43 @@ import { emailQueue } from "./queues/emailQueue";
 const app = express();
 app.set("trust proxy", 1);
 
-app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
+const cleanFrontendUrl = env.FRONTEND_URL.replace(/\/+$/, "");
+const isCrossDomain =
+  cleanFrontendUrl.startsWith("https://") ||
+  process.env.NODE_ENV === "production";
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const cleanOrigin = origin.replace(/\/+$/, "");
+      if (
+        cleanOrigin === cleanFrontendUrl ||
+        cleanOrigin.endsWith(".vercel.app") ||
+        cleanOrigin.startsWith("http://localhost") ||
+        cleanOrigin.startsWith("http://127.0.0.1")
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
-const isProduction =
-  process.env.NODE_ENV === "production" &&
-  !env.FRONTEND_URL.startsWith("http://localhost") &&
-  !env.FRONTEND_URL.startsWith("http://127.0.0.1");
 
 app.use(
   session({
     secret: env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    proxy: true,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000,
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
+      secure: isCrossDomain,
+      sameSite: isCrossDomain ? "none" : "lax",
     },
   })
 );
