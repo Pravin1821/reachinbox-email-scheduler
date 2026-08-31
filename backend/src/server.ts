@@ -94,12 +94,18 @@ async function ensureDefaultSender() {
 }
 
 async function start() {
-  await ensureDefaultSender().catch((err) => console.warn("[senders] failed to seed default sender:", err.message));
-  await ensureEmailIndex().catch(() => console.warn("[search] skipping ES init — not critical for deploy demo"));
-  await reconcileOnBoot();
   app.listen(env.PORT, () => {
     console.log(`[server] listening on port ${env.PORT}`);
   });
+  ensureDefaultSender().catch((err) =>
+    console.error("[senders] failed to seed default sender:", err.message)
+  );
+  reconcileOnBoot().catch((err) => {
+    console.error("[reconciler] failed to complete:", err.message);
+  });
+  ensureEmailIndex().catch(() =>
+    console.warn("[search] skipping ES init — not critical for deploy demo")
+  );
 }
 
 start();
