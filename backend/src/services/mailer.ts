@@ -3,8 +3,8 @@ import { env } from "../config/env";
 
 const transporter = nodemailer.createTransport({
   host: "smtp.ethereal.email",
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true,  
   auth: {
     user: env.ETHEREAL_USER,
     pass: env.ETHEREAL_PASS,
