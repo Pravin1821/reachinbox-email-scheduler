@@ -2,20 +2,24 @@
 
 A full-stack email scheduling system with smart rate limiting, bulk CSV import, Elasticsearch search, Slack notifications, and Google OAuth — built as a technical challenge.
 
+**Deployment Link:** https://reachinbox-email-scheduler-rho-nine.vercel.app/
+
+**Loom Video Link:** https://www.loom.com/share/41f199dc72614de7af8d2c2601d44226
+
 ---
 
 ## Tech Stack
 
-| Layer | Technologies |
-|---|---|
-| **Backend** | Express + TypeScript, Prisma ORM, PostgreSQL |
-| **Queue** | BullMQ (delayed jobs), Redis (AOF persistence) |
-| **Email** | Nodemailer + Ethereal SMTP (test mailbox) |
-| **Search** | Elasticsearch 8.x (full-text across to/subject/body) |
-| **Auth** | Passport.js + Google OAuth 2.0, express-session + Redis |
-| **Notifications** | Slack Web API (`chat.postMessage`) |
-| **Frontend** | React 18 + Vite + TypeScript + Tailwind CSS |
-| **Dev tooling** | Docker Compose (Postgres + Redis + Elasticsearch) |
+| Layer             | Technologies                                            |
+| ----------------- | ------------------------------------------------------- |
+| **Backend**       | Express + TypeScript, Prisma ORM, PostgreSQL            |
+| **Queue**         | BullMQ (delayed jobs), Redis (AOF persistence)          |
+| **Email**         | Nodemailer + Ethereal SMTP (test mailbox)               |
+| **Search**        | Elasticsearch 8.x (full-text across to/subject/body)    |
+| **Auth**          | Passport.js + Google OAuth 2.0, express-session + Redis |
+| **Notifications** | Slack Web API (`chat.postMessage`)                      |
+| **Frontend**      | React 18 + Vite + TypeScript + Tailwind CSS             |
+| **Dev tooling**   | Docker Compose (Postgres + Redis + Elasticsearch)       |
 
 ---
 
@@ -45,11 +49,11 @@ docker compose up -d
 
 This starts three containers:
 
-| Container | Service | Port |
-|---|---|---|
-| `reachinbox-postgres` | PostgreSQL 16 | 5432 |
-| `reachinbox-redis` | Redis 7 | 6379 |
-| `reachinbox-es` | Elasticsearch 8.14 | 9200 |
+| Container             | Service            | Port |
+| --------------------- | ------------------ | ---- |
+| `reachinbox-postgres` | PostgreSQL 16      | 5432 |
+| `reachinbox-redis`    | Redis 7            | 6379 |
+| `reachinbox-es`       | Elasticsearch 8.14 | 9200 |
 
 ### 3. Configure environment variables
 
@@ -252,24 +256,24 @@ http://localhost:4000/admin/queues
 
 ## API Endpoints
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/health` | No | Health check |
-| GET | `/api/auth/google` | No | Initiate Google OAuth |
-| GET | `/api/auth/google/callback` | No | OAuth callback |
-| GET | `/api/auth/me` | No | Get current session user |
-| POST | `/api/auth/logout` | No | Destroy session |
-| GET | `/api/senders` | ✓ | List all senders |
-| POST | `/api/senders` | ✓ | Create a sender |
-| POST | `/api/emails/schedule` | ✓ | Schedule an email |
-| GET | `/api/emails/scheduled` | ✓ | List SCHEDULED/QUEUED/RATE_LIMITED emails |
-| GET | `/api/emails/sent` | ✓ | List SENT/FAILED emails |
-| GET | `/api/emails/search?q=` | ✓ | Elasticsearch full-text search |
-| GET | `/api/slack/connect` | ✓ | Initiate Slack OAuth |
-| GET | `/api/slack/callback` | No | Slack OAuth callback |
-| GET | `/api/slack/status` | ✓ | Check if Slack is connected |
-| DELETE | `/api/slack` | ✓ | Disconnect Slack |
-| GET | `/admin/queues` | No | Bull Board dashboard |
+| Method | Path                        | Auth | Description                               |
+| ------ | --------------------------- | ---- | ----------------------------------------- |
+| GET    | `/health`                   | No   | Health check                              |
+| GET    | `/api/auth/google`          | No   | Initiate Google OAuth                     |
+| GET    | `/api/auth/google/callback` | No   | OAuth callback                            |
+| GET    | `/api/auth/me`              | No   | Get current session user                  |
+| POST   | `/api/auth/logout`          | No   | Destroy session                           |
+| GET    | `/api/senders`              | ✓    | List all senders                          |
+| POST   | `/api/senders`              | ✓    | Create a sender                           |
+| POST   | `/api/emails/schedule`      | ✓    | Schedule an email                         |
+| GET    | `/api/emails/scheduled`     | ✓    | List SCHEDULED/QUEUED/RATE_LIMITED emails |
+| GET    | `/api/emails/sent`          | ✓    | List SENT/FAILED emails                   |
+| GET    | `/api/emails/search?q=`     | ✓    | Elasticsearch full-text search            |
+| GET    | `/api/slack/connect`        | ✓    | Initiate Slack OAuth                      |
+| GET    | `/api/slack/callback`       | No   | Slack OAuth callback                      |
+| GET    | `/api/slack/status`         | ✓    | Check if Slack is connected               |
+| DELETE | `/api/slack`                | ✓    | Disconnect Slack                          |
+| GET    | `/admin/queues`             | No   | Bull Board dashboard                      |
 
 ---
 
@@ -277,29 +281,29 @@ http://localhost:4000/admin/queues
 
 ### Backend (`backend/.env`)
 
-| Variable | Required | Description |
-|---|---|---|
-| `DATABASE_URL` | ✓ | PostgreSQL connection string |
-| `REDIS_URL` | ✓ | Redis connection URL (used by BullMQ + sessions) |
-| `PORT` | — | Backend port (default: `4000`) |
-| `ETHEREAL_USER` | ✓ | Ethereal test SMTP username |
-| `ETHEREAL_PASS` | ✓ | Ethereal test SMTP password |
-| `GOOGLE_CLIENT_ID` | ✓ | Google OAuth 2.0 client ID |
-| `GOOGLE_CLIENT_SECRET` | ✓ | Google OAuth 2.0 client secret |
-| `GOOGLE_CALLBACK_URL` | ✓ | Backend OAuth callback URL (e.g., `http://localhost:4000/api/auth/google/callback`) |
-| `SESSION_SECRET` | ✓ | Long random string for `express-session` signing |
-| `FRONTEND_URL` | — | Frontend origin for CORS + post-OAuth redirects (default: `http://localhost:3000`) |
-| `SLACK_CLIENT_ID` | ✓ | Slack app Client ID |
-| `SLACK_CLIENT_SECRET` | ✓ | Slack app Client Secret |
-| `SLACK_REDIRECT_URI` | ✓ | Slack OAuth redirect URL (e.g., `http://localhost:4000/api/slack/callback`) |
-| `SLACK_DEFAULT_CHANNEL_ID` | — | Slack channel ID for rate-limit notifications (falls back to `"general"`) |
-| `WORKER_CONCURRENCY` | — | Number of emails the BullMQ worker processes in parallel (default: `5`) |
+| Variable                   | Required | Description                                                                         |
+| -------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | ✓        | PostgreSQL connection string                                                        |
+| `REDIS_URL`                | ✓        | Redis connection URL (used by BullMQ + sessions)                                    |
+| `PORT`                     | —        | Backend port (default: `4000`)                                                      |
+| `ETHEREAL_USER`            | ✓        | Ethereal test SMTP username                                                         |
+| `ETHEREAL_PASS`            | ✓        | Ethereal test SMTP password                                                         |
+| `GOOGLE_CLIENT_ID`         | ✓        | Google OAuth 2.0 client ID                                                          |
+| `GOOGLE_CLIENT_SECRET`     | ✓        | Google OAuth 2.0 client secret                                                      |
+| `GOOGLE_CALLBACK_URL`      | ✓        | Backend OAuth callback URL (e.g., `http://localhost:4000/api/auth/google/callback`) |
+| `SESSION_SECRET`           | ✓        | Long random string for `express-session` signing                                    |
+| `FRONTEND_URL`             | —        | Frontend origin for CORS + post-OAuth redirects (default: `http://localhost:3000`)  |
+| `SLACK_CLIENT_ID`          | ✓        | Slack app Client ID                                                                 |
+| `SLACK_CLIENT_SECRET`      | ✓        | Slack app Client Secret                                                             |
+| `SLACK_REDIRECT_URI`       | ✓        | Slack OAuth redirect URL (e.g., `http://localhost:4000/api/slack/callback`)         |
+| `SLACK_DEFAULT_CHANNEL_ID` | —        | Slack channel ID for rate-limit notifications (falls back to `"general"`)           |
+| `WORKER_CONCURRENCY`       | —        | Number of emails the BullMQ worker processes in parallel (default: `5`)             |
 
 ### Frontend (`frontend/.env`)
 
-| Variable | Required | Description |
-|---|---|---|
-| `VITE_API_BASE_URL` | ✓ | Backend base URL (e.g., `http://localhost:4000`) |
+| Variable            | Required | Description                                      |
+| ------------------- | -------- | ------------------------------------------------ |
+| `VITE_API_BASE_URL` | ✓        | Backend base URL (e.g., `http://localhost:4000`) |
 
 ---
 
@@ -335,21 +339,27 @@ http://localhost:4000/admin/queues
 ## Assumptions, Shortcuts, and Trade-offs
 
 ### PostgreSQL over MySQL
+
 PostgreSQL was chosen for its native UUID support, superior indexing, and better Prisma support.
 
 ### Slack connection is global, not per-tenant
+
 The `SlackConnection` model stores one workspace-wide connection. There's no multi-tenant user model — authentication is stateless via Google session. A production system would store a SlackConnection per authenticated user or organisation.
 
 ### Session-only auth, no persisted Users table
+
 After Google OAuth, the user's name/email/avatar is serialized directly into the Redis session. There's no Users database table — user data is lost if the session expires. A production system would upsert a Users row on each login.
 
 ### Ethereal SMTP (not real email delivery)
+
 Emails are sent to [Ethereal](https://ethereal.email) — a fake SMTP server that captures messages for inspection. The preview URL is stored on the Email row and shown in the UI. To send real emails, replace `mailer.ts` with your SMTP provider.
 
 ### Per-email delay is applied at job-creation time
+
 Each recipient's `scheduledAt` is staggered by `index × delaySeconds` when the compose form is submitted. The BullMQ queue naturally spaces out delivery. This is equivalent to a worker-level delay and avoids the need for a BullMQ `rateLimiter` option for this use case.
 
 ### Bull Board has no auth
+
 The `/admin/queues` dashboard is exposed without authentication — suitable for local development only. Add middleware to protect it in any deployed environment.
 
 ---

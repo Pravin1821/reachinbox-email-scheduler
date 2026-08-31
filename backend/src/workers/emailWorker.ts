@@ -11,6 +11,15 @@ import {
 } from "../services/rateLimiter";
 import { notifyRateLimitHit } from "../services/slack"; 
 import { indexEmail } from "../services/search";
+import express from "express";
+
+
+const healthApp = express();
+healthApp.get("/", (req, res) => res.send("worker alive"));
+const PORT = process.env.PORT || 4001;
+healthApp.listen(PORT, () => {
+  console.log(`[worker] health check server listening on port ${PORT}`);
+});
 
 const worker = new Worker(
   EMAIL_QUEUE_NAME,
